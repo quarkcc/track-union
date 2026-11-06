@@ -36,6 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # Versiona los ficheros locales para que el navegador no mezcle versiones en caché
+      - run: sed -i -E 's/(src|href)="(style\.css|[a-z]+\.js)"/\1="\2?v=${{ github.sha }}"/' static/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: static
