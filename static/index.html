@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Track Union</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside id="sidebar">
+  <h1>Track Union</h1>
+
+  <section>
+    <h2>1. Tracks</h2>
+    <label id="drop" class="drop">
+      <input type="file" id="file" accept=".gpx" multiple hidden>
+      Arrastra aquí tus .gpx o <u>haz clic</u> para elegirlos
+    </label>
+    <ul id="tracks" class="list"></ul>
+  </section>
+
+  <section>
+    <h2>2. Seleccionar trozo</h2>
+    <div id="sel-empty" class="hint">Elige un track de la lista o haz clic sobre él en el mapa.</div>
+    <div id="sel" hidden>
+      <div class="active-name"><span id="sel-dot" class="dot"></span><b id="sel-name"></b></div>
+      <label>Inicio <span id="start-lbl" class="mono"></span></label>
+      <input type="range" id="start" min="0" value="0">
+      <label>Fin <span id="end-lbl" class="mono"></span></label>
+      <input type="range" id="end" min="0" value="0">
+      <div id="sel-info" class="info"></div>
+      <div class="hint">También puedes arrastrar los marcadores <b class="g">A</b> y <b class="r">B</b> sobre el mapa.
+        Si el inicio va después del fin, el trozo se recorre al revés.</div>
+      <div class="row">
+        <button id="btn-all">Track completo</button>
+        <button id="btn-swap">Invertir A↔B</button>
+        <button id="btn-add" class="primary">＋ Añadir trozo</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Composición</h2>
+    <ol id="pieces" class="list"></ol>
+    <div id="total" class="info"></div>
+    <div class="row">
+      <button id="btn-orient" title="Invierte los trozos cuyo final queda más cerca del trozo anterior">Orientar automáticamente</button>
+      <button id="btn-clear">Vaciar</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. Exportar</h2>
+    <label>Nombre <input type="text" id="out-name" value="Track unido"></label>
+    <label class="chk"><input type="checkbox" id="keep-time"> Conservar tiempos originales</label>
+    <label class="chk"><input type="checkbox" id="split-seg"> Un segmento por trozo (si no, uno continuo)</label>
+    <button id="btn-export" class="primary wide">⬇ Descargar GPX</button>
+  </section>
+</aside>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="gpx.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

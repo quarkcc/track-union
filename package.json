@@ -1,0 +1,11 @@
+{
+  "name": "track-union",
+  "private": true,
+  "description": "Unir trozos de varios tracks GPX (web estática)",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@xmldom/xmldom": "^0.9.8"
+  }
+}
