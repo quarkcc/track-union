@@ -48,6 +48,16 @@
       <button id="btn-orient" title="Invierte los trozos cuyo final queda más cerca del trozo anterior">Orientar automáticamente</button>
       <button id="btn-clear">Vaciar</button>
     </div>
+    <div class="gapcfg">
+      <label>Unir saltos por caminos para <select id="profile"></select></label>
+      <div class="row">
+        <button id="btn-gaps-route" title="Busca una ruta por caminos para todos los saltos">Todos por caminos</button>
+        <button id="btn-gaps-line">Todos en recta</button>
+      </div>
+      <div class="hint">En cada salto puedes elegir <b>Recta</b> o <b>Caminos</b> (también haciendo clic en la línea del mapa).
+        Para buscar por caminos se envían a <a href="https://brouter.de" target="_blank" rel="noopener">brouter.de</a>
+        solo las coordenadas de los dos extremos del salto.</div>
+    </div>
   </section>
 
   <section>
@@ -62,6 +72,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="gpx.js"></script>
+<script src="routing.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

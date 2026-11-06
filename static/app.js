@@ -7,7 +7,13 @@ const COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
 const GAP_WARN_M = 50;
 
 const $ = (id) => document.getElementById(id);
-const state = { tracks: [], activeId: null, pieces: [], nextId: 1 };
+const state = {
+  tracks: [], activeId: null, pieces: [], nextId: 1,
+  gapDefault: 'line',       // modo de los saltos sin elección propia: 'line' | 'route'
+  gapMode: {},              // elección por salto, clave `${idA}>${idB}`
+  routes: new Map(),        // caché de rutas, clave perfil|origen|destino
+};
+const MIN_GAP_M = 1;        // por debajo de esto no hay salto que rellenar
 
 // ---------- Mapa ----------
 const map = L.map('map').setView([40.4, -3.7], 6);
@@ -227,19 +233,118 @@ $('btn-orient').onclick = () => {
 };
 $('btn-clear').onclick = () => { if (!state.pieces.length || confirm('¿Vaciar la composición?')) { state.pieces = []; renderPieces(); } };
 
+// ---------- Saltos: recta o por caminos ----------
+const ROUTE_COLOR = '#8e44ad', LINE_COLOR = '#c0392b';
+const routeKey = (from, to) => `${$('profile').value}|${from[0]},${from[1]}|${to[0]},${to[1]}`;
+
+/** Ruta en caché para el salto; si no existe y `fetchIt`, la pide a BRouter. */
+function routeFor(from, to, fetchIt) {
+  const key = routeKey(from, to);
+  let r = state.routes.get(key);
+  if (!r && fetchIt) {
+    r = { status: 'loading' };
+    state.routes.set(key, r);
+    Routing.fetchRoute($('profile').value, from, to)
+      .then((res) => {
+        r.status = 'ok'; r.points = res.points;
+        r.dist = res.dist ?? length(res.points);
+      })
+      .catch((e) => { r.status = 'error'; r.error = e.message; })
+      .finally(renderPieces);
+  }
+  return r;
+}
+
+/** Datos del salto entre el trozo i-1 y el i. */
+function gapInfo(i) {
+  const pa = state.pieces[i - 1], pb = state.pieces[i];
+  const from = pa.points.at(-1), to = pb.points[0];
+  const key = `${pa.id}>${pb.id}`;
+  const straight = haversine(from, to);
+  const mode = straight < MIN_GAP_M ? 'line' : (state.gapMode[key] || state.gapDefault);
+  const route = straight < MIN_GAP_M ? null : routeFor(from, to, mode === 'route');
+  const useRoute = mode === 'route' && route && route.status === 'ok';
+  return { key, from, to, straight, mode, route, useRoute, dist: useRoute ? route.dist : straight };
+}
+
+function setGapMode(key, mode, from, to) {
+  if (mode === 'route') {
+    const r = state.routes.get(routeKey(from, to));
+    if (r && r.status === 'error') state.routes.delete(routeKey(from, to)); // reintentar
+  }
+  state.gapMode[key] = mode;
+  renderPieces();
+}
+
+function setAllGaps(mode) {
+  state.gapDefault = mode;
+  state.gapMode = {};
+  for (const [k, r] of state.routes) if (r.status === 'error') state.routes.delete(k);
+  renderPieces();
+}
+
+function renderGap(ol, g) {
+  const div = el('div', { className: 'gap' + (!g.useRoute && g.straight > GAP_WARN_M ? ' warn' : '') });
+  if (g.straight < MIN_GAP_M) {
+    div.textContent = '↕ sin salto';
+    ol.append(div);
+    return;
+  }
+  let txt = `↕ salto de ${fmtDist(g.straight)}`;
+  const r = g.route;
+  if (g.mode === 'route') {
+    if (!r || r.status === 'loading') txt += ' · buscando ruta…';
+    else if (r.status === 'ok') txt = `↕ por caminos: ${fmtDist(r.dist)} (recta ${fmtDist(g.straight)})`;
+    else txt += ` · ⚠ sin ruta (${r.error}); se usa la recta`;
+  } else if (r && r.status === 'ok') {
+    txt += ` · por caminos ${fmtDist(r.dist)}`;
+  }
+  const opt = (mode, label, title) => {
+    const b = el('button', { className: 'opt' + (g.mode === mode ? ' on' : ''), textContent: label, title });
+    b.onclick = () => setGapMode(g.key, mode, g.from, g.to);
+    return b;
+  };
+  div.append(el('span', { className: 'gtxt', textContent: txt }),
+    el('span', { className: 'gopts' },
+      opt('line', 'Recta', 'Unir con una línea recta'),
+      opt('route', 'Caminos', 'Unir siguiendo caminos de OpenStreetMap (BRouter)')));
+  ol.append(div);
+
+  // En el mapa se ven las dos opciones; la elegida resaltada. Clic en una para elegirla.
+  const pick = (mode) => (ev) => { L.DomEvent.stopPropagation(ev); setGapMode(g.key, mode, g.from, g.to); };
+  L.polyline([g.from.slice(0, 2), g.to.slice(0, 2)], {
+    color: LINE_COLOR, weight: g.useRoute ? 2 : 3, opacity: g.useRoute ? 0.5 : 1, dashArray: '4 6',
+  }).bindTooltip(`Recta: ${fmtDist(g.straight)}`, { sticky: true }).on('click', pick('line')).addTo(resultLayer);
+  if (r && r.status === 'ok') {
+    L.polyline(latlngs(r.points), {
+      color: ROUTE_COLOR, weight: g.useRoute ? 5 : 3, opacity: g.useRoute ? 0.9 : 0.5, dashArray: g.useRoute ? null : '2 6',
+    }).bindTooltip(`Por caminos: ${fmtDist(r.dist)}`, { sticky: true }).on('click', pick('route')).addTo(resultLayer);
+  }
+}
+
+/** Lista de trozos a exportar, con los tramos por caminos intercalados. */
+function exportPieces() {
+  const out = [];
+  state.pieces.forEach((p, i) => {
+    if (i > 0) { const g = gapInfo(i); if (g.useRoute) out.push(g.route.points); }
+    out.push(p.points);
+  });
+  return out;
+}
+
 function renderPieces() {
   const ol = $('pieces');
   ol.replaceChildren();
   resultLayer.clearLayers();
-  let distPieces = 0, distGaps = 0, maxGap = 0;
+  let distPieces = 0, distGaps = 0, maxGap = 0, pending = 0;
 
   state.pieces.forEach((p, i) => {
     if (i > 0) {
-      const a = state.pieces[i - 1].points.at(-1), b = p.points[0];
-      const g = haversine(a, b);
-      distGaps += g; maxGap = Math.max(maxGap, g);
-      ol.append(el('div', { className: 'gap' + (g > GAP_WARN_M ? ' warn' : ''), textContent: `↕ salto de ${fmtDist(g)}` }));
-      if (g > 1) L.polyline([a.slice(0, 2), b.slice(0, 2)], { color: '#c0392b', weight: 3, dashArray: '4 6', interactive: false }).addTo(resultLayer);
+      const g = gapInfo(i);
+      distGaps += g.dist;
+      if (!g.useRoute) maxGap = Math.max(maxGap, g.straight);
+      if (g.mode === 'route' && g.route && g.route.status === 'loading') pending++;
+      renderGap(ol, g);
     }
     const len = length(p.points);
     distPieces += len;
@@ -263,9 +368,17 @@ function renderPieces() {
 
   $('total').textContent = state.pieces.length
     ? `Total: ${km(distPieces + distGaps)} (${state.pieces.length} trozos, saltos ${fmtDist(distGaps)}` +
-      (maxGap > GAP_WARN_M ? `, ⚠ salto máx. ${fmtDist(maxGap)})` : ')')
+      (maxGap > GAP_WARN_M ? `, ⚠ salto recto máx. ${fmtDist(maxGap)})` : ')') +
+      (pending ? ' · calculando rutas…' : '')
     : 'Añade trozos desde el paso 2.';
+  $('btn-export').disabled = pending > 0;
 }
+
+// Perfiles de ruta
+for (const p of Routing.PROFILES) $('profile').append(el('option', { value: p.id, textContent: p.label }));
+$('profile').onchange = renderPieces;
+$('btn-gaps-route').onclick = () => setAllGaps('route');
+$('btn-gaps-line').onclick = () => setAllGaps('line');
 
 // ---------- Exportar ----------
 $('btn-export').onclick = () => {
@@ -274,7 +387,7 @@ $('btn-export').onclick = () => {
   try {
     const xml = Gpx.buildGpx({
       name, keepTime: $('keep-time').checked, splitSegments: $('split-seg').checked,
-      pieces: state.pieces.map((p) => p.points),
+      pieces: exportPieces(),
     });
     const blob = new Blob([xml], { type: 'application/gpx+xml' });
     const a = el('a', { href: URL.createObjectURL(blob), download: name.replace(/[\\/:*?"<>|]+/g, '_') + '.gpx' });
